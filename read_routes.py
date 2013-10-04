@@ -52,7 +52,7 @@ def load_valid_routes():
         timesPage = requests.post(base_url, data=post_data).text
         timesPage = BeautifulSoup(timesPage)
         # get all the columns
-        times = [column.string.strip() for column in timesPage.find_all('td') if column.string.strip() != '']
+        times = [column.string.strip() for column in timesPage.find_all('td') if column.string is not None and column.string.strip() != '']
         # filter out all the crappy ones
         times = [x for x in times if x not in 'SELECT YOUR TRAVEL TIMES SEARCH BY START AND END POINTS SELECT YOUR SEARCH CRITERIA']
 
