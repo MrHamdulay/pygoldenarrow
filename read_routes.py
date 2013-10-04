@@ -5,10 +5,12 @@ import pickle
 import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
+from collections import defaultdict
 
 base_url = 'http://196.41.132.126/timetables_SSNew_T5.asp?formtype=3'
 
-# start-end search page
+# monday-friday monday-thursday saturday sunday public-holiday
+departDays = 'AAAAAZZZ AAAAZZZZ ZZZZZAZZ ZZZZZZAZ ZZZZZZZA'.split()
 
 def load_valid_routes():
   searchPage = requests.get(base_url)
@@ -20,49 +22,62 @@ def load_valid_routes():
       departurePlace = optionTag['value'].strip()
       if departurePlace == 'Select':
         continue
-      print departurePlace
-      arrivals = []
+      print 'starting from %s' % departurePlace
+      arrivals = defaultdict(list)
 
       # load all the places we can go from here
       arrivalsPage = BeautifulSoup(requests.get(base_url+'&BusDepart='+departurePlace).text)
       arrivalsTag = arrivalsPage.find(id='BusArrive').contents
-      validRoutes[departurePlace] = [x['value'].strip() for x in arrivalsTag if isinstance(x, Tag) and x['value'] != 'Select']
+      arrivalPlaces = [x['value'].strip() for x in arrivalsTag if isinstance(x, Tag) and x['value'] != 'Select']
+      for arrivalPlace in arrivalPlaces:
+        print 'ending at %s' % arrivalPlace
+        for departDay in departDays:
+          # check available routes and times
 
-  return validRotues
+          post_data = {
+              'BusDepart': departurePlace,
+              'BusArrive': arrivalPlace,
+              'DepartDay': departDay,
+              'DepartTime': '500',
+              'DepartTimeEnd': '2300'
+              }
 
-def load_route_times(validRotues):
-  # monday-friday monday-thursday saturday sunday public-holiday
-  departDays = 'AAAAAZZZ AAAAZZZZ ZZZZZAZZ ZZZZZZAZ ZZZZZZZA'.split()
+          # this piece of code makes me want to throw up a little
+          timesPage = requests.post(base_url, data=post_data).text
+          timesPage = BeautifulSoup(timesPage)
+          started = False
+          times = []
+          for column in timesPage.find_all('td'):
+            if column.string is None or len(column.string.strip()) == 0:
+              continue
+            #ugly ugly ugly hack so that we know we've started seeing times'
+            if column.string not in 'SELECT YOUR TRAVEL TIMES SEARCH BY START AND END POINTS SELECT YOUR SEARCH CRITERIA':
+              started = True
+            if started:
+              times.append(column.string.strip())
 
-  for departurePlace in validRoutes:
-    for arrivalPlace in validRoutes[departurePlace]:
-      for departDay in departDays:
-        # check available routes and times
+          # interesting trick to convert list into n-tuples
+          it = iter(times)
+          times = zip(it, it)
+          # times = list of 2-tuples (departureDays, time string)
+          print times
+          arrivals[arrivalPlace].extend(times)
+      print arrivals
+      validRoutes[departurePlace] = arrivals
 
-        post_data = {
-            'BusDepart': departurePlace,
-            'BusArrive': arrivalPlace,
-            'DepartDay': departDay,
-            'DepartTime': '500',
-            'DepartTimeEnd': '2300'
-            }
-        timesPage = BeautifulSoup(requests.post(base_url, data=post_data).text)
+  return validRoutes
 
-        timesPage.find_all('table')
-        for table in timesPage.find_all('tbody'):
-          # if this table has a header row with "days, time and trip rows we've come to the right place"
-          if table.children[0].find_all('th'):
-            pass
 
 if __name__ == '__main__':
   routes = {}
   try:
+    raise IOError()
     with open('routes.pickle') as routesFile:
       routes = pickle.load(routesFile)
   except IOError:
     print 'Cache miss, loading routes'
     routes = load_valid_routes()
+    print routes
     with open('routes.pickle', 'w') as routesFile:
       pickle.dump(routes, routesFile)
 
-  print routes
